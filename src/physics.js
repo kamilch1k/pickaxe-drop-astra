@@ -22,11 +22,17 @@ export class BlockWorld{
  damage(block,energy){block.health-=energy;if(block.health<=0){block.alive=false;this.onBreak(block);return true;}return false;}
 }
 export class PickaxeBody{
- constructor(position=V(0,config.wallRows+config.spawnHeight,config.wallCenterZ),random=Math.random){this.position=position.clone();this.velocity=V();this.orientation=new Quaternion().setFromAxisAngle(V(0,0,1),Math.PI+.45);this.angularVelocity=V(...Array.from({length:3},()=>config.initialAngularVelocityMin+random()*(config.initialAngularVelocityMax-config.initialAngularVelocityMin)));this.mass=config.mass;this.inverseMass=1/this.mass;this.inverseInertia=1/(this.mass*.55*config.pickaxeScale**2);this.linearDrag=config.linearDrag;this.angularDrag=config.angularDrag;this.active=true;this.sleeping=false;this.sleepTimer=0;this.probes=probes;this.visual=null;this.sweeps=[];this.contacts=[];enforceZConstraint(this);this.previousPosition=this.position.clone();this.previousOrientation=this.orientation.clone();}
+ constructor(position=V(0,config.wallRows+config.spawnHeight,config.wallCenterZ),random=Math.random){this.position=position.clone();this.velocity=V();this.orientation=new Quaternion().setFromAxisAngle(V(0,0,1),Math.PI+.45);this.angularVelocity=V(0,0,config.initialAngularVelocityMin+random()*(config.initialAngularVelocityMax-config.initialAngularVelocityMin));this.mass=config.mass;this.inverseMass=1/this.mass;this.inverseInertia=1/(this.mass*.55*config.pickaxeScale**2);this.linearDrag=config.linearDrag;this.angularDrag=config.angularDrag;this.active=true;this.sleeping=false;this.sleepTimer=0;this.probes=probes;this.visual=null;this.sweeps=[];this.contacts=[];enforceZConstraint(this);this.previousPosition=this.position.clone();this.previousOrientation=this.orientation.clone();}
  points(){return this.probes.map(p=>p.local.clone().applyQuaternion(this.orientation).add(this.position));}
  syncVisual(alpha=1){if(this.visual){this.visual.position.lerpVectors(this.previousPosition,this.position,alpha);this.visual.quaternion.slerpQuaternions(this.previousOrientation,this.orientation,alpha);}}
 }
-// The lane acts only on center-of-mass translation, never on orientation or torque.
+// Rotation is restricted to the wall plane, independently of the camera.
+export function enforcePlanarRotation(body){
+ body.angularVelocity.x=0;body.angularVelocity.y=0;
+ const q=body.orientation,length=Math.hypot(q.z,q.w);
+ if(length>1e-10)q.set(0,0,q.z/length,q.w/length);else q.identity();
+}
+// The depth lane constrains center-of-mass translation.
 export function enforceZConstraint(body){
  const min=config.wallCenterZ-config.corridorHalfDepth,max=config.wallCenterZ+config.corridorHalfDepth;
  body.position.z=Math.max(min,Math.min(max,body.position.z));
@@ -43,16 +49,17 @@ export function applyImpulse(body,r,impulse){
  // Cap the resulting depth speed to the distance left in one fixed step.
  const min=config.wallCenterZ-config.corridorHalfDepth,max=config.wallCenterZ+config.corridorHalfDepth;
  body.velocity.z=Math.max((min-body.position.z)/config.fixedDt,Math.min((max-body.position.z)/config.fixedDt,body.velocity.z));
- body.angularVelocity.addScaledVector(r.clone().cross(impulse),body.inverseInertia);
+ body.angularVelocity.z+=(r.x*impulse.y-r.y*impulse.x)*body.inverseInertia;
+ enforcePlanarRotation(body);
 }
 function effectiveInverseMass(body,direction){
  return body.inverseMass*(direction.x**2+direction.y**2+config.zImpulseScale*direction.z**2);
 }
 export class PickaxeSimulator{
  constructor(world){this.world=world;this.bodies=[];this.accumulator=0;this.stats={head:0,handle:0,broken:0};}
- add(body){if(this.bodies.length>=config.maxBodies){const index=this.bodies.findIndex(b=>b.sleeping);if(index<0)return false;const [old]=this.bodies.splice(index,1);old.visual?.removeFromParent();}enforceZConstraint(body);body.previousPosition.copy(body.position);this.bodies.push(body);return true;}
+ add(body){if(this.bodies.length>=config.maxBodies){const index=this.bodies.findIndex(b=>b.sleeping);if(index<0)return false;const [old]=this.bodies.splice(index,1);old.visual?.removeFromParent();}enforceZConstraint(body);enforcePlanarRotation(body);body.previousPosition.copy(body.position);body.previousOrientation.copy(body.orientation);this.bodies.push(body);return true;}
  advance(delta){this.accumulator+=Math.min(delta,.1);while(this.accumulator>=config.fixedDt){this.step(config.fixedDt);this.accumulator-=config.fixedDt;}for(const b of this.bodies)b.syncVisual(this.accumulator/config.fixedDt);}
- step(dt){for(const b of this.bodies){b.previousPosition.copy(b.position);b.previousOrientation.copy(b.orientation);if(!b.active)continue;b.contacts=[];b.sweeps=[];b.velocity.y-=config.gravity*dt;b.velocity.z*=Math.exp(-config.zVelocityDamping*dt);b.velocity.multiplyScalar(Math.exp(-b.linearDrag*dt));b.angularVelocity.multiplyScalar(Math.exp(-b.angularDrag*dt));b.velocity.clampLength(0,config.maxVelocity);b.angularVelocity.clampLength(0,config.maxAngularVelocity);
+ step(dt){for(const b of this.bodies){enforcePlanarRotation(b);b.previousPosition.copy(b.position);b.previousOrientation.copy(b.orientation);if(!b.active)continue;b.contacts=[];b.sweeps=[];b.velocity.y-=config.gravity*dt;b.velocity.z*=Math.exp(-config.zVelocityDamping*dt);b.velocity.multiplyScalar(Math.exp(-b.linearDrag*dt));b.angularVelocity.multiplyScalar(Math.exp(-b.angularDrag*dt));b.velocity.clampLength(0,config.maxVelocity);b.angularVelocity.clampLength(0,config.maxAngularVelocity);
  // Angular substeps keep curved probe trajectories close to swept segments.
  const count=Math.max(2,Math.ceil(b.angularVelocity.length()*dt/.025));let supported=false;
  for(let s=0;s<count;s++){let remaining=dt/count;for(let iteration=0;iteration<16&&remaining>1e-7;iteration++){
@@ -64,7 +71,7 @@ export class PickaxeSimulator{
  b.contacts.push({point:point.clone(),normal:n.clone(),kind:probe.kind});let broken=false;
  if(first.block&&normalSpeed>.5){this.stats[probe.kind]++;const energy=.5*b.mass*normalSpeed**2*(probe.kind==='head'?config.headDamageMultiplier:config.handleDamageMultiplier);broken=this.world.damage(first.block,energy);}
  if(broken){this.stats.broken++;const j=normalSpeed*b.mass*config.velocityLossAfterBreakingBlock;applyImpulse(b,r,n.clone().multiplyScalar(j*.4));b.velocity.multiplyScalar(1-config.velocityLossAfterBreakingBlock);}
- else{b.position.addScaledVector(n,first.depth+.001);if(vn<0){const restitution=normalSpeed<1?0:!first.block?config.floorRestitution:probe.kind==='head'?config.headRestitution:config.handleRestitution;const denom=effectiveInverseMass(b,n)+b.inverseInertia*r.clone().cross(n).lengthSq();const j=-(1+restitution)*vn/denom;applyImpulse(b,r,n.clone().multiplyScalar(j));const tangent=contactVelocity.clone().addScaledVector(n,-vn);if(tangent.lengthSq()>1e-10){const speedT=tangent.length();tangent.divideScalar(speedT);const jt=Math.min(config.friction*j,speedT/(effectiveInverseMass(b,tangent)+b.inverseInertia*r.clone().cross(tangent).lengthSq()));applyImpulse(b,r,tangent.multiplyScalar(-jt));}}}
+ else{b.position.addScaledVector(n,first.depth+.001);if(vn<0){const restitution=normalSpeed<1?0:!first.block?config.floorRestitution:probe.kind==='head'?config.headRestitution:config.handleRestitution;const denom=effectiveInverseMass(b,n)+b.inverseInertia*(r.x*n.y-r.y*n.x)**2;const j=-(1+restitution)*vn/denom;applyImpulse(b,r,n.clone().multiplyScalar(j));const tangent=contactVelocity.clone().addScaledVector(n,-vn);if(tangent.lengthSq()>1e-10){const speedT=tangent.length();tangent.divideScalar(speedT);const jt=Math.min(config.friction*j,speedT/(effectiveInverseMass(b,tangent)+b.inverseInertia*(r.x*tangent.y-r.y*tangent.x)**2));applyImpulse(b,r,tangent.multiplyScalar(-jt));}}}
  enforceZConstraint(b);remaining*=1-first.t;if(first.t<1e-5)remaining=Math.max(0,remaining-1e-5);b.velocity.clampLength(0,config.maxVelocity);b.angularVelocity.clampLength(0,config.maxAngularVelocity);
  }}
  if(supported&&b.velocity.length()<config.sleepVelocityThreshold&&b.angularVelocity.length()<config.sleepAngularThreshold)b.sleepTimer+=dt;else b.sleepTimer=0;if(b.sleepTimer>config.sleepTime){b.sleeping=true;b.active=false;b.velocity.set(0,0,0);b.angularVelocity.set(0,0,0);}

@@ -1,36 +1,29 @@
 # Pickaxe Drop Astra
 
-A small Three.js experiment: falling pickaxes against a destructible 8 Ã— 5 cube wall. No physics engine, gameplay, or external assets.
-
-## Run
-
-Node.js 20.19+ or 22.12+. Run `npm ci`, then `npm run dev`. `npm test` checks physics; `npm run build` produces a portable static site in `dist`.
+A Three.js custom-physics experiment with a 12 by 60 wall of 720 destructible blocks, pixel-style ores, and block-sized golden pickaxes. No physics engine or external game assets.
 
 ## Controls
 
-- **Drop Pickaxe** drops one body; **Drop Many** drops eight.
-- The fixed front-facing orthographic camera follows the newest drop downward.
-- **D** toggles probes, swept paths, center of mass, velocity, angular axis, contact normals, and impact counts.
-- Reload to rebuild the wall.
+- Drag to orbit the camera. Scroll or pinch to zoom.
+- Double-click the scene to restore the front view and default zoom.
+- Drop Pickaxe releases one body; Drop Many releases eight.
+- D toggles physics debugging, including the rotation lock and depth corridor.
+- Reload to restore the wall. One pickaxe drops on load.
 
-## Implementation
+The camera follows the newest drop while preserving your chosen orbit angle.
 
-`src/physics.js` contains the single tuning object, `PickaxeBody`, `BlockWorld`, and `PickaxeSimulator`. Physics state is independent of meshes. Semi-implicit Euler and world-space quaternion integration run at 120 Hz with an accumulator, interpolation, and angular substeps. Twelve spherical probes sweep expanded AABBs and the floor. Earliest contacts rewind the body before normal and Coulomb-friction impulses; off-center impulses change angular velocity using scalar inertia. Broken blocks are removed immediately and the remaining timestep continues at reduced speed. Low-energy supported bodies sleep.
+## Physics constraints
 
-`src/main.js` builds the scene and primitive pickaxe, binds controls, draws debug geometry, and renders cosmetic debris. Three.js is the only runtime dependency. Vite only bundles the site.
+Pickaxes spin only around the wall-normal Z axis. X/Y angular velocity is zero and orientation is projected to a pure Z quaternion at insertion, each step, and after impulses. Collision response uses only the permitted Z torque and its corresponding effective inertia. Camera movement never changes these constraints.
 
-Deliberate limits: probe-based approximation, scalar inertia, static surviving blocks, no pickaxe-to-pickaxe collision. Small rotational substeps approximate curved sweeps. A swept-bounds mathematical broad phase is appropriate for this scene. Up to 100 bodies are kept; sleeping bodies are recycled first. These limits keep this a small experiment rather than a general physics engine.
+Centers stay within wallCenterZ +/- corridorHalfDepth (default +/-0.14). Integration and positional collision corrections enforce this lane, cancel outward velocity without rebound, and damp depth motion. Linear X/Y movement remains free. Spawns stay three blocks inside the side edges.
 
-Published to GitHub Pages via the included Actions workflow.
+src/physics.js contains the configuration, PickaxeBody, BlockWorld, and PickaxeSimulator. Independent physics state runs at 120 Hz with semi-implicit Euler, quaternion integration, angular substeps, swept spherical probes against expanded AABBs, collision/friction impulses, block damage, and sleeping. Smaller pickaxe probes and inertia match the 0.48 visual scale.
 
-## 2.5D lane
+src/main.js renders the 3D scene, camera controls, and debug geometry. src/art.js draws original procedural pixel textures. The visual reference is https://github.com/vycdev/falling-pickaxe; no source code, textures, or audio from that repository are included.
 
-The pickaxe is scaled to 0.48 (about one cube long), including its probes and scalar inertia. Spawns use the inner half of the wall, three blocks from either edge, and start on the wall's Z center above its top. Centers remain within `wallCenterZ ± corridorHalfDepth` (±0.14 by default); the mesh and probes can tilt outside that lane during free 3D rotation.
+Deliberate limits: scalar inertia, probe-based collision approximation, static surviving blocks, no body-to-body collisions, decorative side trim, and a 100-body limit that recycles sleeping bodies first.
 
-Every integration and positional collision correction projects the center back into this corridor. Outward depth velocity is canceled without rebound. Exponential depth damping is timestep-independent. Collision impulses have reduced linear Z mobility and a remaining-lane speed cap, but the original full impulse is used for angular torque. X/Y translation and all three rotation axes stay free. The D overlay outlines the lane and reports the maximum center offset.
+## Development
 
-Tests cover both lane boundaries, high depth speeds, repeated side impulses, preserved full torque, safe spawn bounds, swept impacts, destruction, and multi-body settling. The angular sleep threshold is tuned for the smaller inertia.
-
-## Front-facing mining shaft
-
-The scene uses a portrait viewport, fixed front orthographic camera, smooth vertical tracking, golden pickaxes, original procedurally drawn pixel stone/ore textures, bedrock-style edge trim, and a pixel landscape revealed by destroyed blocks. One pickaxe drops on load. The reference for the requested presentation is [vycdev/falling-pickaxe](https://github.com/vycdev/falling-pickaxe); no code, textures, or sounds from that repository are included. Edge trim is visual only; the existing free X/Y motion and constrained center Z remain unchanged.
+Use Node.js 20.19+ or 22.12+. Run npm ci, then npm run dev. npm test checks physics constraints, collision behavior, and multi-body stability. npm run build produces a static dist folder. GitHub Actions tests and publishes pushes to main on GitHub Pages.

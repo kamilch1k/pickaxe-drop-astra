@@ -1,5 +1,5 @@
 import {Vector3, Quaternion} from 'three';
-export const config={gravity:18,mass:2,linearDrag:.035,angularDrag:.12,initialAngularVelocityMin:-3,initialAngularVelocityMax:3,headRestitution:.12,handleRestitution:.48,floorRestitution:.16,friction:.55,headDamageMultiplier:1.25,handleDamageMultiplier:.018,blockResistance:38,velocityLossAfterBreakingBlock:.16,maxVelocity:90,maxAngularVelocity:18,optionalAlignmentStrength:0,sleepVelocityThreshold:.18,sleepAngularThreshold:.55,sleepTime:.75,fixedDt:1/120,probeRadius:.05,maxBodies:100,wallColumns:12,wallRows:60,pickaxeScale:.48,wallCenterZ:0,corridorHalfDepth:.14,zVelocityDamping:12,zImpulseScale:.12,spawnEdgeMargin:3,spawnHeight:3};
+export const config={gravity:18,mass:2,linearDrag:.035,angularDrag:.12,initialAngularVelocityMin:-3,initialAngularVelocityMax:3,headRestitution:.12,handleRestitution:.48,floorRestitution:.16,friction:.55,headDamageMultiplier:.65,handleDamageMultiplier:.018,blockResistance:65,velocityLossAfterBreakingBlock:.16,breakRestitution:.55,breakHopSpeed:4.2,maxVelocity:90,maxAngularVelocity:18,optionalAlignmentStrength:0,sleepVelocityThreshold:.18,sleepAngularThreshold:.55,sleepTime:.75,fixedDt:1/120,probeRadius:.05,maxBodies:100,wallColumns:12,wallRows:60,pickaxeScale:.48,wallCenterZ:0,corridorHalfDepth:.14,zVelocityDamping:12,zImpulseScale:.12,spawnEdgeMargin:3,spawnHeight:3};
 const V=(x=0,y=0,z=0)=>new Vector3(x,y,z);
 export const probes=[[-.92,.32,0,'head'],[-.65,.49,0,'head'],[-.32,.58,0,'head'],[0,.6,0,'head'],[.32,.58,0,'head'],[.65,.49,0,'head'],[.92,.32,0,'head'],[0,.25,0,'handle'],[0,-.12,0,'handle'],[0,-.49,0,'handle'],[0,-.86,0,'handle'],[0,-1.2,0,'handle']].map(([x,y,z,kind])=>({local:V(x,y,z).multiplyScalar(config.pickaxeScale),kind}));
 // Slab intersection against the expanded box: swept spherical probes.
@@ -70,7 +70,16 @@ export class PickaxeSimulator{
  const contactVelocity=b.angularVelocity.clone().cross(r).add(b.velocity),vn=contactVelocity.dot(n),normalSpeed=Math.max(0,-vn);supported ||= n.y>.5;
  b.contacts.push({point:point.clone(),normal:n.clone(),kind:probe.kind});let broken=false;
  if(first.block&&normalSpeed>.5){this.stats[probe.kind]++;const energy=.5*b.mass*normalSpeed**2*(probe.kind==='head'?config.headDamageMultiplier:config.handleDamageMultiplier);broken=this.world.damage(first.block,energy);}
- if(broken){this.stats.broken++;const j=normalSpeed*b.mass*config.velocityLossAfterBreakingBlock;applyImpulse(b,r,n.clone().multiplyScalar(j*.4));b.velocity.multiplyScalar(1-config.velocityLossAfterBreakingBlock);}
+ if(broken){
+ this.stats.broken++;
+ // A destroyed block kicks the pickaxe back out of the newly opened cell.
+ // Use the same constrained effective mass as intact contacts, preserving Z spin.
+ const denom=effectiveInverseMass(b,n)+b.inverseInertia*(r.x*n.y-r.y*n.x)**2;
+ if(vn<0)applyImpulse(b,r,n.clone().multiplyScalar(-(1+config.breakRestitution)*vn/denom));
+ b.velocity.x*=1-config.velocityLossAfterBreakingBlock;
+ if(b.velocity.y<config.breakHopSpeed)applyImpulse(b,r,V(0,(config.breakHopSpeed-b.velocity.y)*b.mass,0));
+ b.position.addScaledVector(n,.002);
+}
  else{b.position.addScaledVector(n,first.depth+.001);if(vn<0){const restitution=normalSpeed<1?0:!first.block?config.floorRestitution:probe.kind==='head'?config.headRestitution:config.handleRestitution;const denom=effectiveInverseMass(b,n)+b.inverseInertia*(r.x*n.y-r.y*n.x)**2;const j=-(1+restitution)*vn/denom;applyImpulse(b,r,n.clone().multiplyScalar(j));const tangent=contactVelocity.clone().addScaledVector(n,-vn);if(tangent.lengthSq()>1e-10){const speedT=tangent.length();tangent.divideScalar(speedT);const jt=Math.min(config.friction*j,speedT/(effectiveInverseMass(b,tangent)+b.inverseInertia*(r.x*tangent.y-r.y*tangent.x)**2));applyImpulse(b,r,tangent.multiplyScalar(-jt));}}}
  enforceZConstraint(b);remaining*=1-first.t;if(first.t<1e-5)remaining=Math.max(0,remaining-1e-5);b.velocity.clampLength(0,config.maxVelocity);b.angularVelocity.clampLength(0,config.maxAngularVelocity);
  }}

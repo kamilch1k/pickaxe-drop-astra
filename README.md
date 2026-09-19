@@ -27,3 +27,7 @@ Deliberate limits: scalar inertia, probe-based collision approximation, static s
 ## Development
 
 Use Node.js 20.19+ or 22.12+. Run npm ci, then npm run dev. npm test checks physics constraints, collision behavior, and multi-body stability. npm run build produces a static dist folder. GitHub Actions tests and publishes pushes to main on GitHub Pages.
+
+## Impact tuning
+
+Head damage uses a 0.65 multiplier and blocks have 65 resistance (previously 1.25 and 38). Breaking a block applies a rebound impulse with 0.55 restitution and a minimum upward hop of 4.2 units/second. This makes the pickaxe jump out of a destroyed cell instead of carrying its downward speed through the column. The rebound still uses off-center Z torque and respects the hard X/Y rotation lock. Regression tests check that a fast downward strike breaks one block and then moves upward.

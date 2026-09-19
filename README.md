@@ -1,6 +1,6 @@
 # Pickaxe Drop Astra
 
-A Three.js custom-physics experiment with a 12 by 60 wall of 720 destructible blocks, pixel-style ores, and block-sized golden pickaxes. No physics engine or external game assets.
+A Three.js custom-physics experiment with a 12 by 60 wall with 720 grid cells and scattered empty pockets, pixel-style ores, and block-sized golden pickaxes. No physics engine or external game assets.
 
 ## Controls
 
@@ -30,4 +30,10 @@ Use Node.js 20.19+ or 22.12+. Run npm ci, then npm run dev. npm test checks phys
 
 ## Impact tuning
 
-Head damage uses a 0.65 multiplier and blocks have 65 resistance (previously 1.25 and 38). Breaking a block applies a rebound impulse with 0.55 restitution and a minimum upward hop of 4.2 units/second. This makes the pickaxe jump out of a destroyed cell instead of carrying its downward speed through the column. The rebound still uses off-center Z torque and respects the hard X/Y rotation lock. Regression tests check that a fast downward strike breaks one block and then moves upward.
+Head damage uses a 0.65 multiplier and blocks have 65 resistance (previously 1.25 and 38). Breaking a block applies a rebound impulse with 0.55 restitution and a minimum upward hop of 6 units/second. This makes the pickaxe jump out of a destroyed cell instead of carrying its downward speed through the column. The rebound still uses off-center Z torque and respects the hard X/Y rotation lock. Regression tests check that a fast downward strike breaks one block and then moves upward.
+
+## Side mining and pockets
+
+Actual metal-head contact with either side of a block can chip it using both inward and sliding/spinning contact speed. Side chips are limited to 6-18 damage per contact, with a 0.15-second per-body/per-block cooldown to prevent repeated solver contacts from instantly deleting blocks. Untouched neighbors receive no damage. Side breaks kick the pickaxe upward and away from the struck face.
+
+Deterministic staggered pockets are removed from both rendering and collision. The top landing rows remain intact. Head and handle restitution are 0.48 and 0.65 for livelier bounces; destruction gives a 6-unit upward hop. The rotation lock, depth lane, and camera orbit controls still apply.

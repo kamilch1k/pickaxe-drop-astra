@@ -2,6 +2,24 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Vector3} from 'three';
 import {BlockWorld,PickaxeBody,PickaxeSimulator,applyImpulse,config,sweepAABB,enforceZConstraint,spawnPosition} from './src/physics.js';
+function sideContact(sign,health=config.blockResistance){
+ const w=new BlockWorld(),block=w.blocks[0];w.blocks=[block];block.center.set(sign*.99,10,0);block.min.copy(block.center).addScalar(-.48);block.max.copy(block.center).addScalar(.48);block.health=health;block.alive=true;
+ const b=new PickaxeBody(new Vector3(0,10,0));b.orientation.identity();b.angularVelocity.set(0,0,0);b.velocity.set(sign*.4,-8,0);const s=new PickaxeSimulator(w);s.add(b);return {s,b,block};
+}
+test('glancing head contact chips both left and right blocks',()=>{
+ for(const sign of [-1,1]){const {s,b,block}=sideContact(sign);for(let i=0;i<8;i++)s.step(config.fixedDt);assert.ok(block.health<config.blockResistance);assert.ok(block.health>=config.blockResistance-config.sideChipMaxDamage);assert.ok(block.alive);assert.equal(b.orientation.x,0);assert.equal(b.orientation.y,0);}
+});
+test('breaking a side block sends the pickaxe up and away from that side',()=>{
+ for(const sign of [-1,1]){const {s,b,block}=sideContact(sign,5);for(let i=0;i<8&&block.alive;i++)s.step(config.fixedDt);assert.equal(block.alive,false);assert.ok(b.velocity.y>4);assert.ok(b.velocity.x*sign<-2);}
+});
+test('side scraping cannot mine blocks without contact',()=>{
+ const {s,b,block}=sideContact(1);b.position.x=-2;b.velocity.x=0;for(let i=0;i<12;i++)s.step(config.fixedDt);assert.equal(block.health,config.blockResistance);
+});
+test('wall pockets are actual empty collision space with intact landing rows',()=>{
+ const w=new BlockWorld(),holes=w.blocks.filter(b=>!b.alive);assert.ok(holes.length>30);assert.ok(holes.length<200);
+ for(const block of holes){const a=block.center.clone(),b=a.clone();a.y-=.1;b.y+=.1;assert.equal(w.sweep(a,b),null);}
+ assert.ok(w.blocks.filter(b=>b.center.y>config.wallRows-4).every(b=>b.alive));
+});
 test('lane cancels outward depth velocity without changing XY or rotation',()=>{
  for(const sign of [-1,1]){const b=new PickaxeBody();b.position.set(2,30,config.wallCenterZ+sign*10);b.velocity.set(3,-4,sign*80);const spin=b.angularVelocity.clone(),q=b.orientation.clone();enforceZConstraint(b);assert.equal(b.position.z,config.wallCenterZ+sign*config.corridorHalfDepth);assert.equal(b.velocity.z,0);assert.equal(b.position.x,2);assert.equal(b.position.y,30);assert.equal(b.velocity.x,3);assert.equal(b.velocity.y,-4);assert.ok(b.angularVelocity.equals(spin));assert.ok(b.orientation.equals(q));}
 });
@@ -30,7 +48,7 @@ test('moderate head impacts damage but do not immediately destroy a fresh block'
  assert.equal(w.damage(block,damage),false);assert.ok(block.health>0);assert.ok(block.health<config.blockResistance);
 });
 test('handle damages far less and rebounds more strongly',()=>{function impact(head){const w=new BlockWorld(),s=new PickaxeSimulator(w),b=new PickaxeBody(new Vector3(.5,head?config.wallRows+.5:config.wallRows+.8,0));b.orientation.identity();if(head)b.orientation.setFromAxisAngle(new Vector3(0,0,1),Math.PI);b.angularVelocity.set(0,0,0);b.velocity.y=-10;s.add(b);for(let i=0;i<30;i++)s.step(config.fixedDt);return {s,b};}const head=impact(true),handle=impact(false);assert.ok(head.s.stats.broken>handle.s.stats.broken);assert.ok(handle.s.stats.handle>0);});
-test('many independent bodies remain finite and settle',()=>{let seed=29;const rand=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};const s=new PickaxeSimulator(new BlockWorld());for(let i=0;i<24;i++)s.add(new PickaxeBody(new Vector3((rand()-.5)*6,config.wallRows+3+rand()*2,(rand()-.5)*.3),rand));for(let i=0;i<120*25;i++)s.step(config.fixedDt);for(const b of s.bodies){assert.ok(Number.isFinite(b.position.length()));assert.ok(b.position.y>-.1);assert.ok(b.velocity.length()<=config.maxVelocity+.001);assert.ok(Math.abs(b.orientation.length()-1)<1e-6);}const sleeping=s.bodies.filter(b=>b.sleeping).length;console.log(`settled: ${sleeping}/24, destroyed: ${s.stats.broken}`);assert.ok(sleeping>=20);});
+test('many independent bodies remain finite and settle',()=>{let seed=29;const rand=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};const s=new PickaxeSimulator(new BlockWorld());for(let i=0;i<24;i++)s.add(new PickaxeBody(new Vector3((rand()-.5)*6,config.wallRows+3+rand()*2,(rand()-.5)*.3),rand));for(let i=0;i<120*60;i++)s.step(config.fixedDt);for(const b of s.bodies){assert.ok(Number.isFinite(b.position.length()));assert.ok(b.position.y>-.1);assert.ok(b.velocity.length()<=config.maxVelocity+.001);assert.ok(Math.abs(b.orientation.length()-1)<1e-6);}const sleeping=s.bodies.filter(b=>b.sleeping).length;console.log(`settled: ${sleeping}/24, destroyed: ${s.stats.broken}`);assert.ok(sleeping>=20);});
 
 test('all spawns and corrupted input orientations are constrained before simulation',()=>{
  const s=new PickaxeSimulator(new BlockWorld());

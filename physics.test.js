@@ -9,7 +9,7 @@ test('depth collision impulses retain full three-dimensional torque',()=>{
  for(const sign of [-1,1]){const b=new PickaxeBody(new Vector3(0,30,config.wallCenterZ+sign*config.corridorHalfDepth));b.angularVelocity.set(0,0,0);const r=new Vector3(.2,.3,.1),impulse=new Vector3(2,3,sign*20),expected=r.clone().cross(impulse).multiplyScalar(b.inverseInertia);applyImpulse(b,r,impulse);assert.equal(b.velocity.z,0);assert.equal(b.velocity.x,1);assert.equal(b.velocity.y,1.5);assert.ok(b.angularVelocity.distanceTo(expected)<1e-10);}
 });
 test('spawn extremes remain safely inside the enlarged wall and lane',()=>{
- assert.equal(new BlockWorld().blocks.length,440);
+ assert.equal(new BlockWorld().blocks.length,720);
  for(const value of [0,.5,1]){const p=spawnPosition(()=>value);assert.ok(Math.abs(p.x)<=config.wallColumns/2-config.spawnEdgeMargin);assert.equal(p.z,config.wallCenterZ);assert.ok(p.y>config.wallRows+1);}
 });
 test('high depth speeds and repeated side impulses cannot escape the corridor',()=>{

@@ -19,6 +19,14 @@ Node.js 20.19+ or 22.12+. Run `npm ci`, then `npm run dev`. `npm test` checks ph
 
 `src/main.js` builds the scene and primitive pickaxe, binds controls, draws debug geometry, and renders cosmetic debris. Three.js is the only runtime dependency. Vite only bundles the site.
 
-Deliberate limits: probe-based approximation, scalar inertia, static surviving blocks, no pickaxe-to-pickaxe collision. Small rotational substeps approximate curved sweeps. A fixed 40-block mathematical broad phase is appropriate for this scene. Up to 100 bodies are kept; sleeping bodies are recycled first. These limits keep this a small experiment rather than a general physics engine.
+Deliberate limits: probe-based approximation, scalar inertia, static surviving blocks, no pickaxe-to-pickaxe collision. Small rotational substeps approximate curved sweeps. A swept-bounds mathematical broad phase is appropriate for this scene. Up to 100 bodies are kept; sleeping bodies are recycled first. These limits keep this a small experiment rather than a general physics engine.
 
 Published to GitHub Pages via the included Actions workflow.
+
+## 2.5D lane
+
+The pickaxe is scaled to 0.48 (about one cube long), including its probes and scalar inertia. Spawns use the inner half of the wall, five blocks from either edge, and start on the wall's Z center above its top. Centers remain within `wallCenterZ ± corridorHalfDepth` (±0.14 by default); the mesh and probes can tilt outside that lane during free 3D rotation.
+
+Every integration and positional collision correction projects the center back into this corridor. Outward depth velocity is canceled without rebound. Exponential depth damping is timestep-independent. Collision impulses have reduced linear Z mobility and a remaining-lane speed cap, but the original full impulse is used for angular torque. X/Y translation and all three rotation axes stay free. The D overlay outlines the lane and reports the maximum center offset.
+
+Tests cover both lane boundaries, high depth speeds, repeated side impulses, preserved full torque, safe spawn bounds, swept impacts, destruction, and multi-body settling. The angular sleep threshold is tuned for the smaller inertia.
